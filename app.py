@@ -8,7 +8,7 @@ import random
 import pdfplumber as plum
 
 # define global variables
-wyears = [2020 - i for i in range(2)]  # for lightning - hail; expand range when finished
+wyears = [2020 - i for i in range(11)]  # for lightning - hail; expand range to 11
 
 # --------------------LIGHTNING - HAIL------------------------------
 # Returns tables of occurences per month over wyears (fully functional; missing error handling)
@@ -16,20 +16,22 @@ def wtable(event, latp, longp):
     long = str(longp)
     lat = str(latp)
     table = []
-    for yr in wyears:
-        year = str(yr)
-        nxtyr = str(yr+1)
 
-        url = f'https://www.ncei.noaa.gov/swdiws/json/{event}/{year}0101:{nxtyr}0101?stat=tilesum%3A{long}%2C{lat}'
-        data = requests.get(url).json()
-        results = data["result"]
+    with requests.Session() as session:
+        for yr in wyears:
+            year = str(yr)
+            nxtyr = str(yr+1)
 
-        row_val_data = [int(i['DAY'].split('-')[1]) for i in results]
-        row = [0]*12
-        for i in row_val_data:
-            row[i-1] += 1
+            url = f'https://www.ncei.noaa.gov/swdiws/json/{event}/{year}0101:{nxtyr}0101?stat=tilesum%3A{long}%2C{lat}'
+            data = session.get(url).json()
+            results = data["result"]
 
-        table.append(row)
+            row_val_data = [int(i['DAY'].split('-')[1]) for i in results]
+            row = [0]*12
+            for i in row_val_data:
+                row[i-1] += 1
+
+            table.append(row)
     return table
 
 # -------------- RAIN - HEAT - COLD - SNOW--------------------------
@@ -161,7 +163,6 @@ lat_in = st.number_input("Latitude (decimal form)", value=43)
 long_in = st.number_input("Longitude (decimal form)", value=-113)
 state_in = st.text_input("State (abbrev)", value='ID')
 county_in = st.text_input("County (include periods if applicable, e.g. 'St. Mary')", value='Butte')
-colorado_id = 'USW00023061'  # for testing (known to contain precip/temp/snow data); delete later
 
 # SECTION: LIGHTNING - HAIL
 if st.button("Generate Data: **LIGHTNING - HAIL**"):
