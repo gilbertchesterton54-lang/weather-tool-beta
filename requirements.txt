@@ -2,3 +2,5 @@ streamlit
 requests
 pandas
 pdfplumber
+beautifulsoup4
+lxml

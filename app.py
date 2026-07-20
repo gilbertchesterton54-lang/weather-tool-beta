@@ -1,14 +1,33 @@
 from io import BytesIO
+from bs4 import BeautifulSoup
 import streamlit as st
 import pandas as pd
 import requests
 import math
 import time
 import random
+import os
 import pdfplumber as plum
 
 # define global variables
 wyears = [2020 - i for i in range(11)]  # for lightning - hail; expand range to 11
+FIPS_CACHE = "county_fips.csv"
+STATES = {
+    "AL":["ALABAMA","01"],"AK":["ALASKA","02"],"AZ":["ARIZONA","04"],"AR":["ARKANSAS","05"],
+    "CA":["CALIFORNIA","06"],"CO":["COLORADO","08"],"CT":["CONNECTICUT","09"],"DE":["DELAWARE","10"],
+    "FL":["FLORIDA","12"],"GA":["GEORGIA","13"],"HI":["HAWAII","15"],"ID":["IDAHO","16"],
+    "IL":["ILLINOIS","17"],"IN":["INDIANA","18"],"IA":["IOWA","19"],"KS":["KANSAS","20"],
+    "KY":["KENTUCKY","21"],"LA":["LOUISIANA","22"],"ME":["MAINE","23"],"MD":["MARYLAND","24"],
+    "MA":["MASSACHUSETTS","25"],"MI":["MICHIGAN","26"],"MN":["MINNESOTA","27"],"MS":["MISSISSIPPI","28"],
+    "MO":["MISSOURI","29"],"MT":["MONTANA","30"],"NE":["NEBRASKA","31"],"NV":["NEVADA","32"],
+    "NH":["NEW HAMPSHIRE","33"],"NJ":["NEW JERSEY","34"],"NM":["NEW MEXICO","35"],"NY":["NEW YORK","36"],
+    "NC":["NORTH CAROLINA","37"],"ND":["NORTH DAKOTA","38"],"OH":["OHIO","39"],"OK":["OKLAHOMA","40"],
+    "OR":["OREGON","41"],"PA":["PENNSYLVANIA","42"],"RI":["RHODE ISLAND","44"],"SC":["SOUTH CAROLINA","45"],
+    "SD":["SOUTH DAKOTA","46"],"TN":["TENNESSEE","47"],"TX":["TEXAS","48"],"UT":["UTAH","49"],
+    "VT":["VERMONT","50"],"VA":["VIRGINIA","51"],"WA":["WASHINGTON","53"],"WV":["WEST VIRGINIA","54"],
+    "WI":["WISCONSIN","55"],"WY":["WYOMING","56"],"DC":["DISTRICT OF COLUMBIA","11"],
+}
+station_id_used = '' # will be updated with actual id ised for rain/heat/cold/snow
 
 # --------------------LIGHTNING - HAIL------------------------------
 # Returns tables of occurences per month over wyears (fully functional; missing error handling)
@@ -128,6 +147,7 @@ def rain_temps_snow_test(station_id):
 #   if no station has at least rain/heat/cold, returns empty list
 def rain_temps_snow(state, county):
     county = '%20'.join(county.split())  # ensure county name formatted correctly
+    global station_id_used
 
     ids = test_ids(state, county)  # get sorted list of ids to test one by one
     rain_heat_cold = []
@@ -138,29 +158,102 @@ def rain_temps_snow(state, county):
             print(f'an error occured (station {id} probably has no pdf data)')
             continue
         if all(len(sublist) == 12 and all(isinstance(item, (int, float)) and not math.isnan(item) for item in sublist) for sublist in masterlist):
-            print(f'used station {id}')  # just to manually confirm values
+            station_id_used = id # just to manually confirm values
             return masterlist
         if not rain_heat_cold:
             if all(len(sublist) == 12 and all(isinstance(item, (int, float)) and not math.isnan(item) for item in sublist) for sublist in masterlist[0:3]):
-                print(f'used station {id}')  # just to manually confirm values
+                station_id_used = id  # just to manually confirm values
                 rain_heat_cold = [*masterlist[0:3], []]
         wait_time = random.uniform(1.8, 2.9)
         time.sleep(wait_time)
     return rain_heat_cold
 
 
+# -------------- TORNADO --------------------------
+# --- STATE lookup: abbr -> [Full Name, FIPS code] ---
+
+# some helper variables/functions
+
+def get_state(abbr):
+    return STATES[abbr.upper()]
+# --- COUNTY lookup: (state_abbr, county_name) -> FIPS code ---
+
+def _load_county_df():
+    if os.path.exists(FIPS_CACHE):
+        return pd.read_csv(FIPS_CACHE, dtype=str)
+    url = "https://www2.census.gov/geo/docs/reference/codes2020/national_county2020.txt"
+    df = pd.read_csv(url, sep="|", dtype=str)[["STATE", "STATEFP", "COUNTYFP", "COUNTYNAME"]]
+    df.to_csv(FIPS_CACHE, index=False)
+    return df
+_county_df = _load_county_df()
+
+def get_county_fips(state_abbr, county_name):
+    row = _county_df[
+        (_county_df["STATE"] == state_abbr.upper()) &
+        (_county_df["COUNTYNAME"].str.contains(county_name, case=False, na=False))
+    ]
+    if row.empty:
+        raise ValueError(f"No match for {county_name}, {state_abbr}")
+    return row.iloc[0]["COUNTYFP"]
+
+def get_tornado_dates(st_in, cty_in):
+    state_info = get_state(st_in)
+    county = cty_in.strip().replace(' ', '%2B')
+    county_code = get_county_fips(st_in.strip(), cty_in.strip())
+    state = state_info[0].replace(' ', '+')
+    state_code = state_info[1]
+
+    url = (
+    f'https://www.ncei.noaa.gov/stormevents/csv?eventType=%28C%29+Tornado&beginDate_mm=01&beginDate_dd=01&begin'
+    f'Date_yyyy=1950&endDate_mm=12&endDate_dd=31&endDate_yyyy=2025&county={county}%3A{county_code}&hailfilter=0.00&torn'
+    f'filter=0&windfilter=000&sort=DT&submitbutton=Search&statefips={state_code}%2C{state}'
+    )
+
+    data = requests.get(url)
+    df = pd.read_csv(BytesIO(data.content))
+    return df["BEGIN_DATE"].tolist()
+
+
+# -------------- HURRICANE --------------------------
+def get_hurricane_dates(st_in, cty_in):
+    county = cty_in.strip().replace(' ', '-')
+    state = get_state(st_in.strip())[0].replace(' ', '-')
+
+    url = f'https://www.homefacts.com/hurricanes/{state}/{county}.html'
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,/;q=0.8'
+    }
+
+    # get hurricane data
+    response = requests.get(url, headers=headers)
+    soup = BeautifulSoup(response.text, 'lxml')
+    container = soup.find('div', class_='scrollcontent_listingpage')
+    rows  = container.find_all('div', recursive=False)
+
+    # get dates
+    dates = []
+    for row in rows:
+        cells = row.find_all('div', class_='table_row_cell')
+        if len(cells) >= 2:
+            dates.append(cells[1].text.strip())
+
+    return dates
+
 
 
 # BUILD WEB APP
 
 # add title, define months
-st.title("Weather Tool - Lightning, Hail, Rain, Cold, Heat, Snow")
+st.title("Weather Tool - Lightning, Hail, Rain, Cold, Heat, Snow, Tornado, Hurricane")
 months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "July", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
 # ask for location data (placeholder values used for now)
-lat_in = st.number_input("Latitude (decimal form)", value=43)
-long_in = st.number_input("Longitude (decimal form)", value=-113)
+lat_in = st.number_input("Latitude (decimal form)", value=43.00)
+long_in = st.number_input("Longitude (decimal form)", value=-113.00)
 state_in = st.text_input("State (abbrev)", value='ID')
 county_in = st.text_input("County (include periods if applicable, e.g. 'St. Mary')", value='Butte')
 
@@ -176,9 +269,9 @@ if "lightning" in st.session_state and "hail" in st.session_state:
     df_lightning = pd.DataFrame(lightning, index=wyears, columns=months)
     df_hail = pd.DataFrame(hail, index=wyears, columns=months)
     st.markdown("**Lightning**")
-    st.table(df_lightning)
+    st.dataframe(df_lightning)
     st.markdown("**Hail**")
-    st.table(df_hail)
+    st.dataframe(df_hail)
 
 
 # SECTION: RAIN - HEAT - COLD - SNOW
@@ -191,8 +284,33 @@ if "rchs" in st.session_state:
     st.subheader("RAIN - HEAT - COLD - SNOW")
     if rchs:
         df_rchs = pd.DataFrame(rchs, index=["Rain", "Heat", "Cold", "Snow"], columns=months).T
-        st.table(df_rchs.style.format("{:.1f}"))
+        st.dataframe(df_rchs.style.format("{:.1f}"))
         if not rchs[-1]:
             st.warning(f'No snow data found for {county_in}. Would you like to try another county?')
+        st.write(f'Station ID: {station_id_used}')
     else:
         st.warning(f'All {county_in} stations within 50 mi have missing rain or temperature data. Please try another county.')
+
+
+# SECTION: TORNADO
+if st.button("Generate Data: **TORNADO**"):
+    st.session_state['tornado'] = get_tornado_dates(state_in, county_in)
+
+if "tornado" in st.session_state:
+    tornado = st.session_state['tornado']
+    st.subheader("TORNADO")
+    df_tornado = pd.DataFrame(tornado, columns=["Dates"])
+    df_tornado.index = range(1, len(df_tornado) + 1)
+    st.dataframe(df_tornado)
+
+
+# SECTION: HURRICANE
+if st.button("Generate Data: **HURRICANE**"):
+    st.session_state['hurricane'] = get_hurricane_dates(state_in, county_in)
+
+if "hurricane" in st.session_state:
+    hurricane = st.session_state['hurricane']
+    st.subheader("HURRICANE")
+    df_hurricane = pd.DataFrame(hurricane, columns=["Dates"])
+    df_hurricane.index = range(1, len(df_hurricane) + 1)
+    st.dataframe(df_hurricane)
