@@ -1,3 +1,4 @@
+curl_cffi
 streamlit
 requests
 pandas
