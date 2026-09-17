@@ -217,9 +217,16 @@ def get_hurricane_dates(st_in, cty_in):
     #
     response = requests.get(url, impersonate='chrome120')
 
+    # 1. CHECK THE HTTP STATUS CODE
+    print(f"Status Code: {response.status_code}")
+
 
     # print("scrollcontent_listingpage" in response.text)
     soup = BeautifulSoup(response.text, 'lxml')
+
+    # 2. CHECK THE WEBPAGE TITLE
+    if soup.title:
+        print(f"Page Title: {soup.title.text}")
     # print('---------------------TITLE')
     # print(soup.title)
     # print('---------------------STATUS CODE')
@@ -230,7 +237,12 @@ def get_hurricane_dates(st_in, cty_in):
     # print('START SOUP_____________________')
     # print(soup)
     # print('END SOUP_____________________')
+    if soup.title:
+        st.write(f"The target page title is: {soup.title.text}")
     container = soup.find('div', class_='scrollcontent_listingpage')
+    if container is None:
+        print("Could not find the target layout container on the page!")
+        return [] # Returns an empty list safely instead of crashing the app
     # print(container)
     rows = container.find_all('div', recursive=False)
 
@@ -247,7 +259,7 @@ def get_hurricane_dates(st_in, cty_in):
 # BUILD WEB APP
 
 # add title, define months
-st.title("Weather Tool - Lightning, Hail, Rain, Cold, Heat, Snow, Tornado, Hurricane")
+st.title("Weather Tool - Lightning, Hail, Rain, Cold, Heat, Snow, Tornado, Hurricane - 710")
 months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "July", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 # ask for location data (placeholder values used for now)
