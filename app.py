@@ -57,35 +57,23 @@ def wtable(event, latp, longp):
 
 # -------------- RAIN - HEAT - COLD - SNOW--------------------------
 # helper function to calculate distance between two decimal coordinate points
-def dist(lat1, lon1, lat2, lon2):  # this function was completely built by Gemini
-    # Earth's radius (6371.0 for km, 3958.8 for miles)
-    r = 3958.8
+def dist(lat1_deg, long1_deg, lat2_deg, long2_deg):
+  # convert to radians
+  lat1, long1 = math.radians(lat1_deg), math.radians(long1_deg)
+  lat2, long2 = math.radians(lat2_deg), math.radians(long2_deg)
 
-    # 1. Convert degrees to radians
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    lambda1, lambda2 = math.radians(lon1), math.radians(lon2)
+  # define radius length
+  r = 3958.8
 
-    # 2. Convert Spherical (Lat/Lon) to 3D Cartesian Vectors (X, Y, Z)
-    # Point 1 Vector
-    x1 = math.cos(phi1) * math.cos(lambda1)
-    y1 = math.cos(phi1) * math.sin(lambda1)
-    z1 = math.sin(phi1)
+  # define term in secant length square root
+  A = math.cos(lat1)*math.cos(lat2)*math.cos(long2-long1)
+  B = math.sin(lat1)*math.sin(lat2)
 
-    # Point 2 Vector
-    x2 = math.cos(phi2) * math.cos(lambda2)
-    y2 = math.cos(phi2) * math.sin(lambda2)
-    z2 = math.sin(phi2)
+  # define secant length, with r factored out
+  Sr = math.sqrt((1-A-B)/2)
 
-    # 3. Calculate Dot Product of the two vectors
-    dot_product = (x1 * x2) + (y1 * y2) + (z1 * z2)
-
-    # 4. Clamp dot product to [-1.0, 1.0] to prevent tiny floating-point errors from breaking acos()
-    dot_product = max(-1.0, min(1.0, dot_product))
-
-    # 5. Find the vertex angle at the center of the Earth and multiply by radius
-    angular_distance_radians = math.acos(dot_product)
-
-    return r * angular_distance_radians
+  # get arc length from scant
+  return 2*r*max(-1, min(1, math.asin(Sr)))
 
 
 # returns list of potentially viable station ids (sorted by distance, all under 50 mi) to use in pdf request
@@ -227,16 +215,6 @@ def get_hurricane_dates(st_in, cty_in):
     # 2. CHECK THE WEBPAGE TITLE
     if soup.title:
         print(f"Page Title: {soup.title.text}")
-    # print('---------------------TITLE')
-    # print(soup.title)
-    # print('---------------------STATUS CODE')
-    # print(response.url)
-    # print(response.status_code)
-    # print('----------------------RESPONSE TEXT')
-    # print(response.text[:500])
-    # print('START SOUP_____________________')
-    # print(soup)
-    # print('END SOUP_____________________')
     if soup.title:
         st.write(f"The target page title is: {soup.title.text}")
     container = soup.find('div', class_='scrollcontent_listingpage')
