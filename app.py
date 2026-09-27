@@ -2,7 +2,7 @@ from io import BytesIO
 from bs4 import BeautifulSoup
 import streamlit as st
 import pandas as pd
-from curl_cffi import requests
+import requests
 import math
 import time
 import random
